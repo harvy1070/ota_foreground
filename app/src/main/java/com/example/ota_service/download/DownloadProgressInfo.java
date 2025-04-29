@@ -1,7 +1,11 @@
 package com.example.ota_service.download;
 
-import android.os.FileUtils;
+//import android.os.FileUtils;
+import android.os.Parcel;
 import android.os.Parcelable;
+import com.example.ota_service.utils.FileUtils;
+
+import java.io.File;
 
 // 다운로드 진행 상태 정보 저장용 클래스
 // Activity와 Service간의 전달을 위해 Parcelable 구현
@@ -90,5 +94,132 @@ public class DownloadProgressInfo implements Parcelable {
         info.status = STATUS_CANCELLED;
         info.errorMessage = "다운로드 취소됨";
         return info;
+    }
+
+    // 상태 메시지 생성
+    public String getStatusMessage() {
+        switch (status) {
+            case STATUS_IDLE:
+                return "대기 중";
+            case STATUS_CONNECTING:
+                return errorMessage;
+            case STATUS_DOWNLOADING:
+                String speedStr = speed > 0 ?
+                        FileUtils.formatFileSize(speed) + "/s" : "계산 중...";
+                String timeStr = estimatedTimeRemaining > 0 ?
+                        "남은 시간 ▶ " + FileUtils.formatDownloadTime(estimatedTimeRemaining) : "";
+
+                return String.format("다운로드 진행 중 %d%% (%s / %s) - %s %s",
+                        progress,
+                        FileUtils.formatFileSize(downloadedBytes),
+                        FileUtils.formatFileSize(totalBytes),
+                        speedStr,
+                        timeStr);
+            case STATUS_PAUSED:
+                return String.format("다운로드 일시 중단 ▶ %d%% (%s/%s)",
+                        progress,
+                        FileUtils.formatFileSize(downloadedBytes),
+                        FileUtils.formatFileSize(totalBytes));
+            case STATUS_COMPLETED:
+            case STATUS_FAILED:
+            case STATUS_CANCELLED:return errorMessage;
+            default:return "알 수 없는 상태";
+        }
+    }
+
+    // Getter 및 Setter
+    public int getStatus() {
+        return status;
+    }
+
+    public void setStatus(int status) {
+        this.status = status;
+    }
+
+    public int getProgress() {
+        return progress;
+    }
+
+    public void setProgress(int progress) {
+        this.progress = progress;
+    }
+
+    public long getDownloadedBytes() {
+        return downloadedBytes;
+    }
+
+    public long setDownloadedBytes(long downloadedBytes) {
+        this.downloadedBytes = downloadedBytes;
+    }
+
+    public long getTotalBytes() {
+        return totalBytes;
+    }
+
+    public void setTotalBytes(long totalBytes) {
+        this.totalBytes = totalBytes;
+    }
+
+    public long getSpeed() {
+        return speed;
+    }
+
+    public void setSpeed(long speed) {
+        this.speed = speed;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage() {
+        this.errorMessage = errorMessage;
+    }
+
+    public long getEstimatedTimeRemaining() {
+        return estimatedTimeRemaining;
+    }
+
+    public void setEstimatedTimeRemaining(long estimatedTimeRemaining) {
+        this.estimatedTimeRemaining = estimatedTimeRemaining;
+    }
+
+    // ParceLable 구현
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest,int flags) {
+        dest.writeInt(status);
+        dest.writeInt(progress);
+        dest.writeLong(downloadedBytes);
+        dest.writeLong(totalBytes);
+        dest.writeLong(speed);
+        dest.writeString(errorMessage);
+        dest.writeLong(estimatedTimeRemaining);
+    }
+
+    protected DownloadProgressInfo(Parcel in) {
+        status = in.readInt();
+        progress = in.readInt();
+        downloadedBytes = in.readLong();
+        totalBytes = in.readLong();
+        speed = in.readLong();
+        errorMessage = in.readString();
+        estimatedTimeRemaining = in.readLong();
+    }
+
+    public static final Creator<DownloadProgressInfo> CREATOR = new Creator<DownloadProgressInfo>() {
+        @Override
+        public DownloadProgressInfo createFromParcel(Parcel in) {
+            return new DownloadProgressInfo(in);
+        }
+
+        @Override
+        public DownloadProgressInfo[] newArray(int size) {
+            return new DownloadProgressInfo[size];
+        }
     }
 }
