@@ -181,7 +181,7 @@ public class DownloadTask {
         BufferedSink sink = null;
         try {
             // 이어 쓰기 모드로 파일 엶
-            sink = OKio.buffer(Okio.appendingSink(tempFile));
+            sink = Okio.buffer(Okio.appendingSink(tempFile));
 
             // 버퍼 설정
             Buffer buffer = new Buffer();
@@ -240,7 +240,7 @@ public class DownloadTask {
                     Log.e(TAG, "리소스 정리 오류", e);
                 }
             }
-            responseBody.close()
+            responseBody.close();
         }
     }
 

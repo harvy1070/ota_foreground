@@ -148,7 +148,7 @@ public class DownloadProgressInfo implements Parcelable {
         return downloadedBytes;
     }
 
-    public long setDownloadedBytes(long downloadedBytes) {
+    public void setDownloadedBytes(long downloadedBytes) {
         this.downloadedBytes = downloadedBytes;
     }
 
@@ -221,5 +221,6 @@ public class DownloadProgressInfo implements Parcelable {
         public DownloadProgressInfo[] newArray(int size) {
             return new DownloadProgressInfo[size];
         }
-    }
+    };
+
 }

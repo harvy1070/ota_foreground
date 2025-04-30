@@ -88,7 +88,7 @@ public class ConnectionManager {
             boolean isSuccess = response.isSuccessful();
             response.close();
 
-            return isSuccess
+            return isSuccess;
         } catch (IOException e) {
             Log.e(TAG, "서버 연결 확인 중 오류", e);
             return false;

@@ -1,7 +1,9 @@
 package com.example.ota_service;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ProgressBar;
@@ -9,17 +11,17 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
-import com.example.otadown_rf.download.DownloadManager;
-import com.example.otadown_rf.R;
+import com.example.ota_service.download.DownloadProgressInfo;
+import com.example.ota_service.service.ServiceManager;
 
-import java.io.File;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-public class MainActivity extends AppCompatActivity implements View.OnClickListener {
-    private final String TAG = MainActivity.class.getSimpleName();
+public class MainActivity extends AppCompatActivity implements View.OnClickListener, ServiceManager.ServiceListener {
+    private static final String TAG = MainActivity.class.getSimpleName();
+    private static final int REQUEST_PERMISSION = 100;
 
     // UI 요소
     private TextView tvCurrentVersion;
@@ -30,11 +32,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     // 버전 초기값
     private double currentVersion = 1.0;
 
-    // 다운로드 매니저
-    private com.example.otadown_rf.download.DownloadManager downloadManager;
+    // 서비스 매니저
+    private ServiceManager serviceManager;
 
-    // 스레드 풀 - 백그라운드 작업 위한 ExecutorService 작업
-    private ExecutorService executorService;
+    // 현재 다운로드 상태
+    private boolean isDownloading = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,103 +56,145 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // 다운로드 버튼 이벤트 설정
         btnDownload.setOnClickListener(this);
 
-        // ExecuteService 초기화 - 단일 스레드 풀
-        executorService = Executors.newSingleThreadExecutor();
+        // 서비스 매니저 초기화
+        serviceManager = new ServiceManager(this, this);
 
-        // 다운로드 관리자
-        File downloadDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
-        downloadManager = new DownloadManager(this, downloadDir, new DownloadCallback() {
-            // 다운로드 시작
-            @Override
-            public void onDownloadStarted(String message) {
-                updateUI(() -> {
-                    progressBar.setVisibility(View.VISIBLE);
-                    tvStatus.setText(message);
-                    btnDownload.setText("취소");
-                });
-            }
+        // 권한 확인
+        checkPermissions();
+    }
 
-            // 다운로드 진행 상황 업데이트
-            @Override
-            public void onProgressUpdate(int progress, String message) {
-                updateUI(() -> {
-                    progressBar.setProgress(progress);
-                    tvStatus.setText(message);
-                });
-            }
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // 서비스 연결 시작
+        serviceManager.connect();
+    }
 
-            // 다운로드 성공
-            @Override
-            public void onDownloadComplete(String message) {
-                updateUI(() -> {
-                    tvStatus.setText(message);
-                    progressBar.setProgress(100);
-                    btnDownload.setText("다운로드");
-
-                    // 버전 업데이트(테스트용)
-                    currentVersion += 0.1;
-                    tvCurrentVersion.setText("현재 버전 ▶ " + String.format("%.1f", currentVersion));
-
-                    Toast.makeText(MainActivity.this, "다운로드 완료", Toast.LENGTH_SHORT).show();
-                });
-            }
-
-            // 다운로드 실패
-            @Override
-            public void onDownloadFailed(String message) {
-                updateUI(() -> {
-                    tvStatus.setText("다운로드 실패 ▶ " + message);
-                    progressBar.setVisibility(View.INVISIBLE);
-                    btnDownload.setText("다운로드");
-                    Toast.makeText(MainActivity.this, "다운로드 실패 ▶ " + message, Toast.LENGTH_SHORT).show();
-                });
-            }
-
-            // 다운로드 취소
-            @Override
-            public void onDownloadCancelled(String message) {
-                updateUI(() -> {
-                    tvStatus.setText(message);
-                    btnDownload.setText("다운로드");
-                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
-                });
-            }
-        });
-        // 이전 다운로드 상태 확인
-        downloadManager.checkPreviousDownload();
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // 서비스 연결 해제
+        serviceManager.disconnect();
     }
 
     @Override
     public void onClick(View v) {
         if (v.getId() == R.id.btnDownload) {
-            if (downloadManager.isDownloading()) {
-                // 이미 다운로드 중이라면 취소함
-                downloadManager.cancelDownload();
+            if (isDownloading) {
+                // 이미 다운로드 중이라면 취소
+                serviceManager.cancelDownload();
                 Toast.makeText(this, "다운로드 취소 중...", Toast.LENGTH_SHORT).show();
             } else {
                 // 다운로드 시작
-                executorService.execute(() -> downloadManager.startDownload());
+                if (checkPermissions()) {
+                    serviceManager.startDownload();
+                }
             }
         }
     }
 
-    // UI 업데이트를 위한 헬퍼 메서드
-    private void updateUI(Runnable action) {
-        runOnUiThread(action);
+    // 권한 확인 메서드
+    private boolean checkPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ 알림 권한
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        REQUEST_PERMISSION);
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-
-        // 다운로드 상태 저장
-        if (downloadManager != null && downloadManager.isDownloading()) {
-            downloadManager.saveDownloadState();
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // 권한 승인
+                Toast.makeText(this, "권한이 승인되었습니다", Toast.LENGTH_SHORT).show();
+            } else {
+                // 권한 거부
+                Toast.makeText(this, "알림 권한이 필요합니다", Toast.LENGTH_SHORT).show();
+            }
         }
+    }
 
-        // ExecutorService 종료
-        if (executorService != null && !executorService.isShutdown()) {
-            executorService.shutdown();
+    // ServiceManager.ServiceListener 구현
+    @Override
+    public void onStatusUpdate(DownloadProgressInfo progressInfo) {
+        updateUI(progressInfo);
+    }
+
+    // UI 업데이트
+    private void updateUI(DownloadProgressInfo progress) {
+        switch (progress.getStatus()) {
+            case DownloadProgressInfo.STATUS_IDLE:
+                progressBar.setVisibility(View.INVISIBLE);
+                tvStatus.setText("대기 중");
+                btnDownload.setText("다운로드");
+                isDownloading = false;
+                break;
+
+            case DownloadProgressInfo.STATUS_CONNECTING:
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setIndeterminate(true);
+                tvStatus.setText(progress.getStatusMessage());
+                btnDownload.setText("취소");
+                isDownloading = true;
+                break;
+
+            case DownloadProgressInfo.STATUS_DOWNLOADING:
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(progress.getProgress());
+                tvStatus.setText(progress.getStatusMessage());
+                btnDownload.setText("취소");
+                isDownloading = true;
+                break;
+
+            case DownloadProgressInfo.STATUS_PAUSED:
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(progress.getProgress());
+                tvStatus.setText(progress.getStatusMessage());
+                btnDownload.setText("다운로드");
+                isDownloading = false;
+                break;
+
+            case DownloadProgressInfo.STATUS_COMPLETED:
+                progressBar.setVisibility(View.VISIBLE);
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(100);
+                tvStatus.setText(progress.getStatusMessage());
+                btnDownload.setText("다운로드");
+                isDownloading = false;
+
+                // 버전 업데이트(테스트용)
+                currentVersion += 0.1;
+                tvCurrentVersion.setText("현재 버전 ▶ " + String.format("%.1f", currentVersion));
+
+                Toast.makeText(this, "다운로드 완료", Toast.LENGTH_SHORT).show();
+                break;
+
+            case DownloadProgressInfo.STATUS_FAILED:
+                progressBar.setVisibility(View.INVISIBLE);
+                tvStatus.setText(progress.getStatusMessage());
+                btnDownload.setText("다운로드");
+                isDownloading = false;
+
+                Toast.makeText(this, progress.getStatusMessage(), Toast.LENGTH_SHORT).show();
+                break;
+
+            case DownloadProgressInfo.STATUS_CANCELLED:
+                progressBar.setVisibility(View.INVISIBLE);
+                tvStatus.setText(progress.getStatusMessage());
+                btnDownload.setText("다운로드");
+                isDownloading = false;
+
+                Toast.makeText(this, "다운로드 취소됨", Toast.LENGTH_SHORT).show();
+                break;
         }
     }
 }

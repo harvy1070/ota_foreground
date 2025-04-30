@@ -19,7 +19,7 @@ public class NotificationUtils {
 
     // 알림 채널 생성
     public static void createNotificationChannel(Context context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.0) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             CharSequence name = "다운로드 알림";
             String description = "OTA 다운로드 진행 상황을 표시합니다";
             int importance = NotificationManager.IMPORTANCE_LOW;

@@ -7,13 +7,14 @@ import android.util.Log;
 import com.example.ota_service.model.DownloadState;
 import com.example.ota_service.model.DownloadStateManager;
 import com.example.ota_service.network.ConnectionManager;
+import com.example.ota_service.download.DownloadTask;
 
 import java.io.File;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class DownloadManager {
+public class DownloadManager implements DownloadTask.DownloadTaskListener {
     private static final String TAG = DownloadManager.class.getSimpleName();
     private static final String DOWNLOAD_URL = "https://s3.ap-southeast-2.amazonaws.com/avn.directed.kr/firmware/TEST/random_file_1GB.bin";
 
@@ -39,7 +40,7 @@ public class DownloadManager {
      * @param context 앱 컨텍스트
      * @param downloadDir 다운로드 디렉토리
      */
-    public DownloadManager(Context context File downloadDir) {
+    public DownloadManager(Context context, File downloadDir) {
         this.context = context;
         this.downloadDir = downloadDir;
 
@@ -173,5 +174,129 @@ public class DownloadManager {
         if (executorService != null && !executorService.isShutdown()) {
             executorService.shutdown();
         }
+    }
+
+    // 다운로드 상태 저장
+    public void saveDownloadState() {
+        if (tempFile.exists() && (isDownloading() || currentState.getDownloadedBytes() > 0)) {
+            long currentSize = tempFile.length();
+
+            if (currentState.getTotalBytes() > 0) {
+                currentState.setDownloadedBytes(currentSize);
+                stateManager.saveState(currentState);
+
+                Log.d(TAG, "다운로드 상태 저장 ▶ " + currentSize + "/" + currentState.getTotalBytes());
+            }
+        }
+    }
+
+    // 다운로드 상태 취소
+    public void cancelDownload() {
+        if (isDownloading()) {
+            if (downloadTask != null) {
+                downloadTask.cancelDownload();
+            }
+        }
+    }
+
+    // 다운로드 상태 확인
+    // true = 다운로드 진행 중, false = 다운로드 중 아님
+    public boolean isDownloading() {
+        return downloadTask != null && downloadTask.isDownloading();
+    }
+
+    // 현재 진행 정보 반환
+    public DownloadProgressInfo getCurrentProgress() {
+        return progressInfo;
+    }
+
+    // DownloadTaskListener 구현
+    @Override
+    public void onStart(long totalBytes, long downloadedBytes) {
+        currentState.setTotalBytes(totalBytes);
+        currentState.setDownloadedBytes(downloadedBytes);
+
+        // 진행 정보 업데이트
+        progressInfo = new DownloadProgressInfo();
+        progressInfo.setStatus(DownloadProgressInfo.STATUS_DOWNLOADING);
+        progressInfo.setTotalBytes(totalBytes);
+        progressInfo.setDownloadedBytes(downloadedBytes);
+        progressInfo.setProgress((int)(downloadedBytes * 100 / totalBytes));
+
+        // 리스너 알림
+        if (listener != null) {
+            listener.onStatusChanged(progressInfo);
+        }
+    }
+
+    @Override
+    public void onProgress(long currentBytes, long totalBytes, long speed) {
+        currentState.setDownloadedBytes(currentBytes);
+
+        // 30초마다 혹은 10% 진행 마다 상태 저장
+        if (currentBytes % (totalBytes / 10) < 1024 * 1024) { // 약 1MB 단위로 체크함
+            saveDownloadState();
+        }
+
+        // 진행 정보 업데이트
+        progressInfo = DownloadProgressInfo.createDownloading(currentBytes, totalBytes, speed);
+
+        // 리스너 알림
+        if (listener != null) {
+            listener.onStatusChanged(progressInfo);
+        }
+    }
+
+    @Override
+    public void onComplete(long fileSize) {
+        // 소요 시간 계산
+        long downloadEndTime = System.currentTimeMillis();
+        long downloadDuration = downloadEndTime - downloadStartTime;
+
+        // 상태 업데이트
+        currentState.setCompleted(true);
+        currentState.setDownloadedBytes(fileSize);
+        currentState.setTotalBytes(fileSize);
+
+        // 진행 정보 업데이트
+        progressInfo = DownloadProgressInfo.createCompleted(fileSize, downloadDuration);
+
+        // 상태 정보 삭제
+        stateManager.clearState();
+
+        // 리스너 알림
+        if (listener != null) {
+            listener.onStatusChanged(progressInfo);
+        }
+    }
+
+    @Override
+    public void onFailure(String errorMessage) {
+        // 실패 정보 업데이트
+        progressInfo = DownloadProgressInfo.createFailed(errorMessage);
+
+        // 상태 저장 (재시도 가능하도록)
+        saveDownloadState();
+
+        // 리스너 알림
+        if (listener != null) {
+            listener.onStatusChanged(progressInfo);
+        }
+    }
+
+    @Override
+    public void onCancelled() {
+        // 취소 정보 업데이트
+        progressInfo = DownloadProgressInfo.createCancelled();
+
+        // 리스너 알림
+        if (listener != null) {
+            listener.onStatusChanged(progressInfo);
+        }
+    }
+
+    // 다운로드 매니저 리스너 인터페이스
+    public interface DownloadManagerListener {
+        void onStatusChanged(DownloadProgressInfo progress);
     }
 }
