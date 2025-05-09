@@ -162,6 +162,7 @@ public class DownloadService extends Service implements DownloadManager.Download
         Notification notification = NotificationUtils.createDownloadNotification(
                 this, progress.getProgress(), progress.getStatusMessage()
         );
+        startForeground(NotificationUtils.NOTIFICATION_ID, notification);
     }
 
     // 알림 업데이트
