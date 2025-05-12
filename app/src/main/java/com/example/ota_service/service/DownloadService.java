@@ -1,15 +1,19 @@
 package com.example.ota_service.service;
 
+import android.app.Activity;
+import android.app.Application;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
@@ -29,6 +33,7 @@ public class DownloadService extends Service implements DownloadManager.Download
     public static final String ACTION_START_DOWNLOAD = "com.example.ota_service.START_DOWNLOAD";
     public static final String ACTION_CANCEL_DOWNLOAD = "com.example.ota_service.CANCEL_DOWNLOAD";
     public static final String ACTION_REQUEST_STATUS = "com.example.ota_service.REQUEST_STATUS";
+    public static final String ACTION_SET_FOREGROUND_STATE = "SET_FOREGROUND_STATE";
 
     private DownloadManager downloadManager;
     private NotificationManagerCompat notificationManager;
@@ -36,10 +41,18 @@ public class DownloadService extends Service implements DownloadManager.Download
 
     private DownloadStatusView floatingView;
 
+    // 활성화 여부
+    private boolean isAppInForeground = true;
+
+    private Handler mainHandler;
+
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "서비스 생성");
+
+        // Handler 추가 5. 12.
+        mainHandler = new Handler(Looper.getMainLooper());
 
         // 알림 채널 생성
         NotificationUtils.createNotificationChannel(this);
@@ -53,6 +66,7 @@ public class DownloadService extends Service implements DownloadManager.Download
         isServiceRunning = true;
 
         // 플로팅 뷰 초기화(5. 9.)
+        // 플로팅 뷰 수정(5. 12.)
         floatingView = new DownloadStatusView(this);
         floatingView.setListener(new DownloadStatusView.DownloadStatusListener() {
             @Override
@@ -87,6 +101,10 @@ public class DownloadService extends Service implements DownloadManager.Download
 
                 case ACTION_REQUEST_STATUS:
                     handleRequestStatus();
+                    break;
+                case ACTION_SET_FOREGROUND_STATE:
+                    isAppInForeground = intent.getBooleanExtra("isInForeground", true);
+                    Log.d(TAG, "포그라운드 상태 변경 ▶ " + isAppInForeground);
                     break;
             }
         } else {
@@ -130,6 +148,9 @@ public class DownloadService extends Service implements DownloadManager.Download
     @Override
     public void onTaskRemoved(Intent rootIntent) {
         Log.d(TAG, "앱이 최근 목록에서 제거됨");
+
+        // 앱이 제거되면 백그라운드 상태로 변경(5. 12.)
+        isAppInForeground = false;
 
         // 다운로드가 진행 중이면 상태 저장
         if (downloadManager != null && downloadManager.isDownloading()) {
@@ -252,19 +273,73 @@ public class DownloadService extends Service implements DownloadManager.Download
         updateNotification(progress);
 
         // 플로팅 뷰 업데이트(5. 9.) - 메인 스레드에서 실행
-        final DownloadProgressInfo finalProgress = progress;
-        new Handler(Looper.getMainLooper()).post(() -> {
-            // 플로팅 뷰 업데이트
-            if (finalProgress.getStatus() == DownloadProgressInfo.STATUS_DOWNLOADING) {
-                if (!floatingView.isShowing()) {
-                    floatingView.show();
+        // Foreground 사용으로 수정(5. 12.)
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (!isAppInForeground) {
+                    if (progress.getStatus() == DownloadProgressInfo.STATUS_DOWNLOADING) {
+                        if (!floatingView.isShowing()) {
+                            Log.d(TAG, "플로팅 뷰 표시 - 백그라운드 상태");
+                            floatingView.show();
+                        }
+                        floatingView.updateStatus(progress);
+                    } else if (progress.getStatus() == DownloadProgressInfo.STATUS_COMPLETED ||
+                            progress.getStatus() == DownloadProgressInfo.STATUS_FAILED ||
+                            progress.getStatus() == DownloadProgressInfo.STATUS_CANCELLED) {
+                        floatingView.hide();
+                    }
+                } else {
+                    // 포그라운드면 플로팅 뷰 숨김
+                    if (floatingView.isShowing()) {
+                        Log.d(TAG, "플로팅 뷰 숨김 - 포그라운드 상태");
+                        floatingView.hide();
+                    }
                 }
-                floatingView.updateStatus(finalProgress);
-            } else if (finalProgress.getStatus() == DownloadProgressInfo.STATUS_COMPLETED ||
-                    finalProgress.getStatus() == DownloadProgressInfo.STATUS_FAILED ||
-                    finalProgress.getStatus() == DownloadProgressInfo.STATUS_CANCELLED) {
-                floatingView.hide();
             }
         });
+    }
+
+    // 상태 감지 메서드 추가 5. 12.
+    private void registerActivityLifecycleCallbacks() {
+        ((Application) getApplication()).registerActivityLifecycleCallbacks(
+            new Application.ActivityLifecycleCallbacks() {
+                private int activityReferences = 0;
+
+                @Override
+                public void onActivityStarted(Activity activity) {
+                    if (++activityReferences == 1) {
+                        // 포그라운드로 전환시킴
+                        isAppInForeground = true;
+                        if (floatingView != null && floatingView.isShowing()) {
+                            floatingView.hide();
+                        }
+                    }
+                }
+
+                @Override
+                public void onActivityStopped(Activity activity) {
+                    if (--activityReferences == 0) {
+                        // 앱이 백그라운드로 전환됨
+                        isAppInForeground = false;
+                        if (downloadManager.isDownloading() && floatingView != null) {
+                            floatingView.show();
+                        }
+                    }
+                }
+
+                // 나머지 콜백 메서드는 빈 구현
+                @Override
+                public void onActivityCreated(Activity activity, Bundle savedInstanceState) {}
+                @Override
+                public void onActivityResumed(Activity activity) {}
+                @Override
+                public void onActivityPaused(Activity activity) {}
+                @Override
+                public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
+                @Override
+                public void onActivityDestroyed(Activity activity) {}
+            }
+        );
     }
 }
