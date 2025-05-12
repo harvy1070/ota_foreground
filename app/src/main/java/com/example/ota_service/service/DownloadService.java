@@ -249,9 +249,14 @@ public class DownloadService extends Service implements DownloadManager.Download
                 break;
 
             case DownloadProgressInfo.STATUS_CANCELLED:
-                // Foreground 서비스 종료
-                stopForeground(false);
-                stopSelf();
+                // 취소 시 서비스 종료하지 않고 알림만 업데이트
+                Notification cancelNotification = NotificationUtils.createDownloadNotification(
+                        this, 0, "다운로드 일시 중지됨"
+                );
+                notificationManager.notify(NotificationUtils.NOTIFICATION_ID, cancelNotification);
+
+                // stopForeground(false); // 이 부분 제거
+                // stopSelf(); // 이 부분 제거
                 break;
         }
     }
@@ -278,15 +283,15 @@ public class DownloadService extends Service implements DownloadManager.Download
             @Override
             public void run() {
                 if (!isAppInForeground) {
-                    if (progress.getStatus() == DownloadProgressInfo.STATUS_DOWNLOADING) {
+                    if (progress.getStatus() == DownloadProgressInfo.STATUS_DOWNLOADING ||
+                    progress.getStatus() == DownloadProgressInfo.STATUS_CANCELLED) { // 취소 상태까지 추가
                         if (!floatingView.isShowing()) {
                             Log.d(TAG, "플로팅 뷰 표시 - 백그라운드 상태");
                             floatingView.show();
                         }
                         floatingView.updateStatus(progress);
                     } else if (progress.getStatus() == DownloadProgressInfo.STATUS_COMPLETED ||
-                            progress.getStatus() == DownloadProgressInfo.STATUS_FAILED ||
-                            progress.getStatus() == DownloadProgressInfo.STATUS_CANCELLED) {
+                            progress.getStatus() == DownloadProgressInfo.STATUS_FAILED) {
                         floatingView.hide();
                     }
                 } else {
