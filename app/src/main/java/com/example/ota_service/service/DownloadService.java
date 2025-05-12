@@ -5,7 +5,9 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -14,6 +16,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.example.ota_service.download.DownloadManager;
 import com.example.ota_service.download.DownloadProgressInfo;
+import com.example.ota_service.ui.DownloadStatusView;
 import com.example.ota_service.utils.NotificationUtils;
 
 import java.io.File;
@@ -31,6 +34,8 @@ public class DownloadService extends Service implements DownloadManager.Download
     private NotificationManagerCompat notificationManager;
     private boolean isServiceRunning = false;
 
+    private DownloadStatusView floatingView;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -46,6 +51,24 @@ public class DownloadService extends Service implements DownloadManager.Download
         downloadManager.setListener(this);
 
         isServiceRunning = true;
+
+        // 플로팅 뷰 초기화(5. 9.)
+        floatingView = new DownloadStatusView(this);
+        floatingView.setListener(new DownloadStatusView.DownloadStatusListener() {
+            @Override
+            public void onDownloadClicked() {
+                if (!downloadManager.isDownloading()) {
+                    downloadManager.startDownload();
+                }
+            }
+
+            @Override
+            public void onCancelClicked() {
+                if (downloadManager.isDownloading()) {
+                    downloadManager.cancelDownload();
+                }
+            }
+        });
     }
 
     @Override
@@ -84,6 +107,11 @@ public class DownloadService extends Service implements DownloadManager.Download
     @Override
     public void onDestroy() {
         Log.d(TAG, "서비스 종료");
+
+        // 플로팅 뷰 제거
+        if (floatingView != null) {
+            floatingView.hide();
+        }
 
         // 다운로드가 진행 중이면 상태 저장
         if (downloadManager != null && downloadManager.isDownloading()) {
@@ -222,5 +250,21 @@ public class DownloadService extends Service implements DownloadManager.Download
 
         // 알림 업데이트
         updateNotification(progress);
+
+        // 플로팅 뷰 업데이트(5. 9.) - 메인 스레드에서 실행
+        final DownloadProgressInfo finalProgress = progress;
+        new Handler(Looper.getMainLooper()).post(() -> {
+            // 플로팅 뷰 업데이트
+            if (finalProgress.getStatus() == DownloadProgressInfo.STATUS_DOWNLOADING) {
+                if (!floatingView.isShowing()) {
+                    floatingView.show();
+                }
+                floatingView.updateStatus(finalProgress);
+            } else if (finalProgress.getStatus() == DownloadProgressInfo.STATUS_COMPLETED ||
+                    finalProgress.getStatus() == DownloadProgressInfo.STATUS_FAILED ||
+                    finalProgress.getStatus() == DownloadProgressInfo.STATUS_CANCELLED) {
+                floatingView.hide();
+            }
+        });
     }
 }
