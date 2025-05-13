@@ -56,6 +56,11 @@ public class DownloadStatusView extends LinearLayout {
     }
 
     private void init(Context context) {
+        // 하드웨어 가속 비활성화
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
+
         // XML 레이아웃 inflate
         LayoutInflater inflater = LayoutInflater.from(context);
         View view = inflater.inflate(R.layout.view_download_status, this, true);
@@ -64,6 +69,13 @@ public class DownloadStatusView extends LinearLayout {
         tvStatus = findViewById(R.id.tvStatus);
         progressBar = findViewById(R.id.progressBar);
         btnAction = findViewById(R.id.btnAction);
+
+        // 버튼 크기 독립 설정
+//        LinearLayout.LayoutParams buttonParams = (LinearLayout.LayoutParams) btnAction.getLayoutParams();
+//        buttonParams.width = (int) (100 * getResources().getDisplayMetrics().density);
+//        btnAction.setLayoutParams(buttonParams);
+
+        customizeButton();
 
         // 버튼 클릭 리스너 설정
         btnAction.setOnClickListener(v -> {
@@ -79,14 +91,26 @@ public class DownloadStatusView extends LinearLayout {
         // 윈도우 매니저 초기화
         windowManager = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
 
+        // 크기 고정 설정(5.13.)
+        int width = (int) (750 * getResources().getDisplayMetrics().density); // 250dp를 픽셀로 변환해줌
+        int height = (int) (400 * getResources().getDisplayMetrics().density);
+
         // 레이아웃 파라미터 설정
+        // 5.13. 수정(레이아웃 파라미터 설정(고정으로 변경)
         params = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+//                WindowManager.LayoutParams.WRAP_CONTENT,
+//                WindowManager.LayoutParams.WRAP_CONTENT,
+                width,
+                height,
                 getOverlayType(),
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,  // FLAG_LAYOUT_NO_LIMITS 제거
+                PixelFormat.TRANSLUCENT  // RGBA_8888에서 TRANSLUCENT로 변경
         );
+
+        // *** 수정됨: 하드웨어 가속 플래그 제거 ***
+        // params.flags |= WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
+
         params.gravity = Gravity.TOP | Gravity.START;
         params.x = 0;
         params.y = 100;
@@ -115,9 +139,26 @@ public class DownloadStatusView extends LinearLayout {
         });
     }
 
+    // 버튼 설정(사이즈 및 이미지)
+    private void customizeButton() {
+        // 크기
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                (int) (120 * getResources().getDisplayMetrics().density),
+                (int) (50 * getResources().getDisplayMetrics().density)
+        );
+
+        // 가운데 정렬
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+
+        btnAction.setLayoutParams(params);
+    }
+
+    // *** 수정됨: 윈도우 타입 변경 ***
     private int getOverlayType() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             return WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            return WindowManager.LayoutParams.TYPE_SYSTEM_ALERT;  // TYPE_PHONE에서 TYPE_SYSTEM_ALERT로 변경
         } else {
             return WindowManager.LayoutParams.TYPE_PHONE;
         }
@@ -156,7 +197,8 @@ public class DownloadStatusView extends LinearLayout {
     public void updateStatus(DownloadProgressInfo progressInfo) {
         switch (progressInfo.getStatus()) {
             case DownloadProgressInfo.STATUS_IDLE:
-                progressBar.setVisibility(View.INVISIBLE);
+                progressBar.setVisibility(View.GONE);
+                progressBar.setIndeterminate(false);
                 tvStatus.setText("대기 중");
                 btnAction.setText("다운로드");
                 isDownloading = false;
@@ -198,14 +240,18 @@ public class DownloadStatusView extends LinearLayout {
                 break;
 
             case DownloadProgressInfo.STATUS_FAILED:
-                progressBar.setVisibility(View.INVISIBLE);
+                progressBar.setVisibility(View.GONE);
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(0);
                 tvStatus.setText(progressInfo.getStatusMessage());
                 btnAction.setText("다운로드");
                 isDownloading = false;
                 break;
 
             case DownloadProgressInfo.STATUS_CANCELLED:
-                progressBar.setVisibility(View.INVISIBLE);
+                progressBar.setVisibility(View.GONE);
+                progressBar.setIndeterminate(false);
+                progressBar.setProgress(0);
                 tvStatus.setText(progressInfo.getStatusMessage());
                 btnAction.setText("다운로드");
                 isDownloading = false;
