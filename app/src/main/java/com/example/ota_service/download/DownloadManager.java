@@ -289,6 +289,9 @@ public class DownloadManager implements DownloadTask.DownloadTaskListener {
         // 취소 정보 업데이트
         progressInfo = DownloadProgressInfo.createCancelled();
 
+        // 상태 저장 추가(이어받기용도), (5. 12.)
+        saveDownloadState();
+
         // 리스너 알림
         if (listener != null) {
             listener.onStatusChanged(progressInfo);

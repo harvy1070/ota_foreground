@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.provider.MediaStore;
 
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
@@ -62,10 +63,22 @@ public class ServiceManager {
         Intent intent = new Intent(context, DownloadService.class);
         intent.setAction(DownloadService.ACTION_REQUEST_STATUS);
         context.startService(intent);
+
+        // 서비스에 포그라운드 상태 알림(5. 12.)
+        Intent foregroundIntent = new Intent(context, DownloadService.class);
+        foregroundIntent.setAction(DownloadService.ACTION_SET_FOREGROUND_STATE); // 수정
+        foregroundIntent.putExtra("isInForeground", true);
+        context.startService(foregroundIntent);
     }
 
     // 서비스 연결 종료
     public void disconnect() {
+        // 서비스에 백그라운드 상태 알림(5. 12.)
+        Intent intent = new Intent(context, DownloadService.class);
+        intent.setAction(DownloadService.ACTION_SET_FOREGROUND_STATE); // 수정
+        intent.putExtra("isInForeground", false);
+        context.startService(intent);
+
         if (receiverRegistered) {
             LocalBroadcastManager.getInstance(context).unregisterReceiver(statusReceiver);
             receiverRegistered = false;
